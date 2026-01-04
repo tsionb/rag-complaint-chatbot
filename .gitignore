@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+
+# Logs
+*.log
+
+
+# Data files 
+data/raw/
+data/processed/
+*.csv
+*.parquet
+
+
+# Vector Databases 
+vector_store/
+chroma/
+faiss_index/
+*.index
+
+
+# Model / Cache files
+.cache/
+.cache/huggingface/
+.cache/torch/
+*.bin
+
+
+# Environment / Secrets
+.env
+.env.*
+*.key
+*.pem
+
+
+# Temporary files
+tmp/
+temp/
