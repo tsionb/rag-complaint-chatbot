@@ -38,7 +38,6 @@ I went into the branch and was ...
 **After**: i made the mistake of using my wellsfargo debit card to depsit funds into xxxxxxxx atm machine outside their branch. i went into the branch and was to...
 
 ## Next Steps
-The cleaned narratives are now ready for:
 1. **Text chunking** (Task 2)
 2. **Embedding generation**
 3. **Vector store indexing**
