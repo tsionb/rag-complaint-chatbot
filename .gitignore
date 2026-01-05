@@ -42,7 +42,7 @@ vectorstore/
 chroma/
 faiss_index/
 *.index
-
+chroma.sqlite3
 
 # Model / Cache files
 .cache/
