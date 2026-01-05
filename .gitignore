@@ -38,6 +38,7 @@ data/processed/
 
 # Vector Databases 
 vector_store/
+vectorstore/
 chroma/
 faiss_index/
 *.index
