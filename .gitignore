@@ -37,6 +37,8 @@ data/processed/
 
 
 # Vector Databases 
+vectorstore/
+*.sqlite3
 vector_store/
 chroma/
 faiss_index/
