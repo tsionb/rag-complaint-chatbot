@@ -37,11 +37,14 @@ data/processed/
 
 
 # Vector Databases 
+vectorstore/
+*.sqlite3
 vector_store/
+vectorstore/
 chroma/
 faiss_index/
 *.index
-
+chroma.sqlite3
 
 # Model / Cache files
 .cache/
