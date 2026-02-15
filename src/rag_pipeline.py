@@ -1,50 +1,108 @@
 # RAG PIPELINE 
 
+import logging
+from dataclasses import dataclass
+from typing import List, Dict, Tuple, Optional, Any
 import chromadb
 from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
+import numpy as np
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ComplaintResult:
+    """Data class for complaint search results."""
+    id: int
+    text: str
+    product: str
+    category: str
+    issue: str
+    company: str
+    similarity: float
 
 print(" RAG Pipeline for CrediTrust Complaint Analysis")
 print("="*60)
 
 class RAGSystem:
-    def __init__(self, vector_store_path="vectorstore_final/"):
-        print(" Initializing RAG System...")
+    def __init__(self, vector_store_path: str = "vectorstore_final/") -> None:
+        """Initialize RAG system with vector store.
         
-        # Load vector store
-        self.client = chromadb.PersistentClient(
-            path=vector_store_path,
-            settings=Settings()
-        )
-        self.collection = self.client.get_collection("complaints_final")
+        Args:
+            vector_store_path: Path to ChromaDB persistent directory
+            
+        Raises:
+            FileNotFoundError: If vector store path doesn't exist
+            Exception: For other initialization errors
+        """
+        logger.info(f"Initializing RAG System with path: {vector_store_path}")
         
-        print(f" Loaded vector store with {self.collection.count()} complaint chunks")
+        try:
+            self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
+            logger.debug("Embedding model loaded successfully")
+            
+            self.client = chromadb.PersistentClient(
+                path=vector_store_path,
+                settings=Settings()
+            )
+            
+            self.collection = self.client.get_collection("complaints_final")
+            logger.info(f"Loaded vector store with {self.collection.count()} complaint chunks")
+            
+        except FileNotFoundError as e:
+            logger.error(f"Vector store path not found: {vector_store_path}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to initialize RAG system: {e}")
+            raise
     
-    def retrieve_complaints(self, question, k=5):
-        """Retrieve relevant complaints for a question"""
-        print(f"\n Searching for: '{question}'")
+    def retrieve_complaints(self, question: str, k: int = 5) -> List[ComplaintResult]:
+        """Retrieve relevant complaints for a question.
         
-        results = self.collection.query(
-            query_texts=[question],
-            n_results=k,
-            include=["documents", "metadatas", "distances"]
-        )
+        Args:
+            question: User's question about complaints
+            k: Number of results to return (default: 5)
+            
+        Returns:
+            List of ComplaintResult objects sorted by relevance
+            
+        Raises:
+            ValueError: If question is empty or invalid
+            Exception: For retrieval errors
+        """
+        if not question or not question.strip():
+            raise ValueError("Question cannot be empty")
+            
+        logger.info(f"Searching for: '{question}'")
         
-        complaints = []
-        if results['documents'] and results['documents'][0]:
-            for i in range(len(results['documents'][0])):
-                complaint = {
-                    'id': i + 1,
-                    'text': results['documents'][0][i],
-                    'product': results['metadatas'][0][i].get('product', 'Unknown'),
-                    'category': results['metadatas'][0][i].get('product_category', 'Unknown'),
-                    'issue': results['metadatas'][0][i].get('issue', 'Unknown'),
-                    'company': results['metadatas'][0][i].get('company', 'Unknown'),
-                    'similarity': 1 - results['distances'][0][i]  # Convert distance to similarity
-                }
-                complaints.append(complaint)
-        
-        print(f" Found {len(complaints)} relevant complaints")
-        return complaints
+        try:
+            results = self.collection.query(
+                query_texts=[question.strip()],
+                n_results=k,
+                include=["documents", "metadatas", "distances"]
+            )
+            
+            complaints: List[ComplaintResult] = []
+            if results['documents'] and results['documents'][0]:
+                for i in range(len(results['documents'][0])):
+                    complaint = ComplaintResult(
+                        id=i + 1,
+                        text=results['documents'][0][i],
+                        product=results['metadatas'][0][i].get('product', 'Unknown'),
+                        category=results['metadatas'][0][i].get('product_category', 'Unknown'),
+                        issue=results['metadatas'][0][i].get('issue', 'Unknown'),
+                        company=results['metadatas'][0][i].get('company', 'Unknown'),
+                        similarity=1 - results['distances'][0][i]  # Convert distance to similarity
+                    )
+                    complaints.append(complaint)
+            
+            logger.info(f"Found {len(complaints)} relevant complaints")
+            return complaints
+            
+        except Exception as e:
+            logger.error(f"Retrieval failed: {e}")
+            raise
     
     def create_prompt(self, question, complaints):
         """Create a prompt for the LLM"""
