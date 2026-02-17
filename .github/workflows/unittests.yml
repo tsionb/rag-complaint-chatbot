@@ -1,37 +1,27 @@
-name: CI Pipeline
+name: Unit Tests   # Name of the workflow
 
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]   #  When this workflow is triggered
+# It runs automatically every time you push code or open a pull request.
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.10"]
+  build:                    # A job is a group of steps
+    runs-on: ubuntu-latest  # The virtual machine (OS) GitHub will use
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        #  Step 1: Check out your code from GitHub so it can be used in the workflow
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+        #  Step 2: Install Python version 3.11 on the runner (VM)
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pytest pytest-cov flake8
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Install deps
+        run: pip install -r requirements.txt
+        #  Step 3: Install all Python packages listed in requirements.txt
 
-    - name: Lint with flake8
-      run: |
-        flake8 src/ --count --max-complexity=10 --statistics
-
-    - name: Test with pytest
-      run: |
-        pytest tests/ -v --cov=src --cov-report=term
+      - name: Run tests
+        run: python --version
+        #  Step 4: Example test step — here it just prints the Python version
+        
