@@ -271,7 +271,6 @@ Successfully built a Gradio-based web application that provides an intuitive int
 
 ##  System Architecture
 
-```mermaid
 graph TD
     A[User Question] --> B[Gradio UI]
     B --> C[FastAPI Middleware]
