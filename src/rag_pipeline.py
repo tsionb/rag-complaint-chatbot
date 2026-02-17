@@ -1,5 +1,6 @@
 # RAG PIPELINE 
 
+from src.middleware.timeout import timeout, TimeoutError
 import logging
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional, Any
@@ -26,97 +27,91 @@ print(" RAG Pipeline for CrediTrust Complaint Analysis")
 print("="*60)
 
 class RAGSystem:
-    def __init__(self, vector_store_path: str = "vectorstore_final/") -> None:
-        """Initialize RAG system with vector store.
+    def __init__(self, vector_store_path="vectorstore_final/"):
+        print(" Initializing RAG System...")
         
-        Args:
-            vector_store_path: Path to ChromaDB persistent directory
-            
-        Raises:
-            FileNotFoundError: If vector store path doesn't exist
-            Exception: For other initialization errors
-        """
-        logger.info(f"Initializing RAG System with path: {vector_store_path}")
+        # Load vector store
+        self.client = chromadb.PersistentClient(
+            path=vector_store_path,
+            settings=Settings()
+        )
+        self.collection = self.client.get_collection("complaints_final")
         
-        try:
-            self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.debug("Embedding model loaded successfully")
-            
-            self.client = chromadb.PersistentClient(
-                path=vector_store_path,
-                settings=Settings()
-            )
-            
-            self.collection = self.client.get_collection("complaints_final")
-            logger.info(f"Loaded vector store with {self.collection.count()} complaint chunks")
-            
-        except FileNotFoundError as e:
-            logger.error(f"Vector store path not found: {vector_store_path}")
-            raise
-        except Exception as e:
-            logger.error(f"Failed to initialize RAG system: {e}")
-            raise
+        print(f" Loaded vector store with {self.collection.count()} complaint chunks")
     
-    def retrieve_complaints(self, question: str, k: int = 5) -> List[ComplaintResult]:
-        """Retrieve relevant complaints for a question.
-        
-        Args:
-            question: User's question about complaints
-            k: Number of results to return (default: 5)
-            
-        Returns:
-            List of ComplaintResult objects sorted by relevance
-            
-        Raises:
-            ValueError: If question is empty or invalid
-            Exception: For retrieval errors
-        """
+    @timeout(seconds=15, error_message="Complaint retrieval timed out")
+    def retrieve_complaints(self, question: str, k: int = 5) -> List:
+        """Retrieve relevant complaints for a question."""
+    
         if not question or not question.strip():
             raise ValueError("Question cannot be empty")
-            
-        logger.info(f"Searching for: '{question}'")
-        
+    
+        print(f"\n🔍 Searching for: '{question}'")
+
         try:
+            
             results = self.collection.query(
-                query_texts=[question.strip()],
-                n_results=k,
-                include=["documents", "metadatas", "distances"]
+            query_texts=[question.strip()],
+            n_results=k,
+            include=["documents", "metadatas", "distances"]
             )
-            
-            complaints: List[ComplaintResult] = []
+        
+            complaints = []
             if results['documents'] and results['documents'][0]:
-                for i in range(len(results['documents'][0])):
-                    complaint = ComplaintResult(
-                        id=i + 1,
-                        text=results['documents'][0][i],
-                        product=results['metadatas'][0][i].get('product', 'Unknown'),
-                        category=results['metadatas'][0][i].get('product_category', 'Unknown'),
-                        issue=results['metadatas'][0][i].get('issue', 'Unknown'),
-                        company=results['metadatas'][0][i].get('company', 'Unknown'),
-                        similarity=1 - results['distances'][0][i]  # Convert distance to similarity
-                    )
-                    complaints.append(complaint)
-            
-            logger.info(f"Found {len(complaints)} relevant complaints")
+             for i in range(len(results['documents'][0])):
+                # Create ComplaintResult object (NOT a dictionary)
+                from types import SimpleNamespace
+                
+                # Create a simple object with attributes
+                complaint = SimpleNamespace()
+                complaint.id = i + 1
+                complaint.text = results['documents'][0][i]
+                complaint.product = results['metadatas'][0][i].get('product', 'Unknown')
+                complaint.category = results['metadatas'][0][i].get('product_category', 'Unknown')
+                complaint.issue = results['metadatas'][0][i].get('issue', 'Unknown')
+                complaint.company = results['metadatas'][0][i].get('company', 'Unknown')
+                complaint.similarity = 1 - results['distances'][0][i]
+                
+                complaints.append(complaint)
+        
+            print(f" Found {len(complaints)} relevant complaints")
             return complaints
-            
+       
         except Exception as e:
-            logger.error(f"Retrieval failed: {e}")
-            raise
+             print(f" Retrieval error: {e}")
+             return []
     
     def create_prompt(self, question, complaints):
         """Create a prompt for the LLM"""
+
         if not complaints:
-            return f"Question: {question}\n\nNo relevant complaints found."
-        
-        # Build context from complaints
+           return f"Question: {question}\n\nNo relevant complaints found."
+
         context = "RELEVANT CUSTOMER COMPLAINTS:\n"
+
         for comp in complaints:
-            context += f"\n[Complaint #{comp['id']} - {comp['product']} - {comp['company']}]\n"
-            context += f"Similarity: {comp['similarity']:.2f}\n"
-            context += f"Issue: {comp['issue']}\n"
-            context += f"Text: {comp['text'][:300]}...\n"
-        
+
+          # Support dict (tests) and object (runtime)
+          if isinstance(comp, dict):
+            comp_id = comp.get("id")
+            product = comp.get("product")
+            company = comp.get("company")
+            similarity = comp.get("similarity", 0)
+            issue = comp.get("issue", "Unknown")
+            text = comp.get("text", "")
+          else:
+            comp_id = comp.id
+            product = comp.product
+            company = comp.company
+            similarity = comp.similarity
+            issue = comp.issue
+            text = comp.text
+
+          context += f"\n[Complaint #{comp_id} - {product} - {company}]\n"
+          context += f"Similarity: {similarity:.2f}\n"
+          context += f"Issue: {issue}\n"
+          context += f"Text: {text[:300]}...\n"
+
         prompt = f"""You are a helpful financial analyst assistant at CrediTrust Financial.
 
 {context}
@@ -133,32 +128,39 @@ INSTRUCTIONS:
 
 ANALYSIS AND ANSWER:
 """
+
         return prompt
     
-    def generate_answer(self, prompt):
+    def generate_answer(self, prompt, complaints):
         """Generate answer using simulated LLM"""
         print(" Generating analysis...")
+            # Extract info from complaints using dot notation
+        companies = []
+        for c in complaints[:3]:
+              if hasattr(c, 'company') and c.company and c.company != 'Unknown':
+                companies.append(c.company)
         
-        # Check question type and generate appropriate response
-        prompt_lower = prompt.lower()
-        
-        if "credit card" in prompt_lower and "fraud" in prompt_lower:
-            return """Based on the retrieved complaints, credit card fraud issues include:
+        company_list = ", ".join(companies) if companies else "multiple financial institutions"
 
-1. **Unauthorized Card Use**: Debit cards stored on accounts being used without authorization (similarity: 0.85)
+            # Check question type and generate appropriate response
+        prompt_lower = prompt.lower()  
+
+        if "credit card" in prompt_lower and "fraud" in prompt_lower:    
+            return f"""Based on the retrieved complaints, credit card fraud issues include:
+
+1. **Unauthorized Card Use**: Debit cards stored on accounts being used without authorization
 2. **Multiple Fraud Occurrences**: Customers experiencing repeated fraud incidents on same cards
-3. **Issuer**: Issues reported with MidFirst Bank and other financial institutions
+3. **Issuers Affected**: {company_list}
 
 **Affected Products**: Debit cards, credit cards
-**Companies Involved**: Multiple banks including MidFirst
 
 **Actionable Insights**:
 - Review card storage security measures
 - Implement stronger fraud detection for repeat incidents
 - Standardize fraud reporting across all partner banks"""
         
-        elif "money transfer" in prompt_lower:
-            return """Analysis of money transfer complaints:
+        elif "money transfer" in prompt_lower or ("transfer" in prompt_lower and "delay" in prompt_lower):
+           return f"""Analysis of money transfer complaints from {company_list}:
 
 1. **Transfer Processing Issues**: Dollar transfers from credit card cash rewards experiencing confirmation but no completion
 2. **System Reliability**: Customers unable to log in for hours, affecting transfer capabilities
@@ -172,8 +174,8 @@ ANALYSIS AND ANSWER:
 - Improve system uptime and login reliability
 - Enhance communication for delayed transfers"""
         
-        elif "bank account fees" in prompt_lower:
-            return """Bank account fee complaints analysis:
+        elif "bank account fee" in prompt_lower or ("fee" in prompt_lower and "account" in prompt_lower):
+           return f"""Analysis of bank account fee complaints:
 
 1. **Business Account Charges**: Business checking accounts charged excessive fees over multiple years
 2. **Unauthorized Fee Issuance**: Fees issued without proper justification or customer agreement
@@ -188,7 +190,7 @@ ANALYSIS AND ANSWER:
 - Create fee dispute resolution process"""
         
         elif "credit card" in prompt_lower:
-            return """Based on the retrieved complaints, general credit card issues include:
+           return f"""Based on the retrieved complaints about credit cards:
 
 1. **Fraud Prevention**: Multiple unauthorized use incidents
 2. **Rewards System**: Problems with cash reward transfers
@@ -202,7 +204,8 @@ ANALYSIS AND ANSWER:
 - Consistent customer service across all card products"""
         
         else:
-            return """Analysis of customer complaints reveals several financial service concerns:
+           return f"""Analysis of customer complaints reveals:
+
 
 1. **Security Issues**: Fraud and unauthorized access across multiple product types
 2. **Fee Transparency**: Unclear or unjustified charges on accounts
@@ -213,39 +216,64 @@ ANALYSIS AND ANSWER:
 
 **Strategic Recommendation**: Implement standardized security protocols and fee transparency measures across all financial products."""
     
+    @timeout(seconds=30, error_message="Answer generation timed out")
     def answer_question(self, question):
         """Complete RAG pipeline for one question"""
         print("\n" + "="*60)
         print(f" QUESTION: {question}")
         print("="*60)
-        
+    
         # Step 1: Retrieve relevant complaints
         complaints = self.retrieve_complaints(question, k=3)
-        
+    
         # Step 2: Create prompt
         prompt = self.create_prompt(question, complaints)
-        
-        # Show context preview
-        if complaints:
-            print(f"\n Using {len(complaints)} complaint chunks (similarity scores shown)")
-        
-        # Step 3: Generate answer
-        answer = self.generate_answer(prompt)
+    
+        # Step 3: Generate answer - PASS COMPLAINTS
+        answer = self.generate_answer(prompt, complaints)  # <-- ADD complaints parameter
         
         # Step 4: Display results
         print(f"\n GENERATED ANSWER:")
         print("-" * 40)
         print(answer)
         print("-" * 40)
-        
+    
         # Show sources
         if complaints:
-            print(f"\n SOURCES USED:")
-            for i, comp in enumerate(complaints, 1):
-                print(f"{i}. [{comp['product']}] {comp['company']} - Similarity: {comp['similarity']:.2f}")
-                print(f"   {comp['text'][:80]}...")
-        
+          print(f"\n SOURCES USED:")
+          for i, comp in enumerate(complaints, 1):
+            # Use dot notation (comp.product) not dictionary notation (comp['product'])
+            print(f"{i}. [{comp.product}] {comp.company} - Similarity: {comp.similarity:.2f}")
+            print(f"   {comp.text[:80]}...")
+    
         return answer, complaints
+    
+    def safe_retrieve_complaints(self, question: str, k: int = 5) -> List:
+        """Retrieve complaints with graceful degradation."""
+        try:
+           return self.retrieve_complaints(question, k)
+        except TimeoutError as e:
+           logger.error(f"Retrieval timeout: {e}")
+           return self._get_fallback_complaints(question)
+        except Exception as e:
+           logger.error(f"Retrieval failed: {e}")
+           return []
+
+    def _get_fallback_complaints(self, question: str) -> List:
+        """Return fallback complaints when retrieval fails."""
+        # Create a simple fallback complaint
+        from types import SimpleNamespace
+    
+        fallback = SimpleNamespace()
+        fallback.id = 1
+        fallback.text = "Customer reported issues with financial services."
+        fallback.product = "General"
+        fallback.category = "General"
+        fallback.issue = "Service issue"
+        fallback.company = "Unknown"
+        fallback.similarity = 0.5
+    
+        return [fallback]
 
 # Test the system
 if __name__ == "__main__":

@@ -10,16 +10,31 @@ from src.utils.validation import validate_question
 from src.session import SessionManager
 from src.middleware.rate_limiter import RateLimiter
 
+import sys
+
+# Create logs directory
+Path("logs").mkdir(exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('rag_chatbot.log')
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('logs/rag_chatbot.log'),
+        logging.FileHandler('logs/errors.log')  # Separate error log
     ]
 )
+
+# Set different levels for different handlers
 logger = logging.getLogger(__name__)
+
+# Create error logger
+error_logger = logging.getLogger('error')
+error_handler = logging.FileHandler('logs/errors.log')
+error_handler.setLevel(logging.ERROR)
+error_logger.addHandler(error_handler)
+
 
 print(" Loading Production RAG Chatbot...")
 
@@ -108,7 +123,7 @@ def export_chat(history: list) -> str:
 # Create the chat interface
 print("🖥️ Creating production chat interface...")
 
-with gr.Blocks(title="CrediTrust Complaint Analyst", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="CrediTrust Complaint Analyst") as demo:
     gr.Markdown("# 🏦 CrediTrust Financial Complaint Analysis")
     gr.Markdown("Ask questions about customer complaints. I'll analyze thousands of complaints to give you insights.")
     
@@ -144,8 +159,7 @@ with gr.Blocks(title="CrediTrust Complaint Analyst", theme=gr.themes.Soft()) as 
         with gr.Column(scale=2):
             chatbot = gr.Chatbot(
                 label="Complaint Analysis Chat",
-                height=500,
-                type="messages"
+                height=500
             )
             
             with gr.Row():
@@ -177,5 +191,6 @@ if __name__ == "__main__":
         server_name=config.host,
         server_port=config.port,
         share=False,
-        debug=config.debug
+        debug=config.debug,
+        theme=gr.themes.Soft()
     )
